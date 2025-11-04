@@ -1,42 +1,10 @@
 const WebSocket = require('ws');
-const mysql = require('mysql2/promise');
 
 class ChatServer {
     constructor() {
         this.clients = new Map();
         this.users = new Map();
-        this.initDatabase();
-    }
-
-    async initDatabase() {
-        try {
-            this.db = await mysql.createConnection({
-                host: process.env.DB_HOST || 'localhost',
-                user: process.env.DB_USER || 'root',
-                password: process.env.DB_PASSWORD || '',
-                database: process.env.DB_NAME || 'red_social',
-                charset: 'utf8mb4'
-            });
-            console.log('✅ Conectado a MySQL');
-        } catch (error) {
-            console.error('❌ Error conectando a MySQL:', error);
-        }
-    }
-
-    async saveMessageToDatabase(messageData) {
-        try {
-            const [result] = await this.db.execute(
-                'INSERT INTO messages (from_user_id, to_user_id, message) VALUES (?, ?, ?)',
-                [messageData.from_user_id, messageData.to_user_id, messageData.message]
-            );
-            
-            console.log(`💾 Mensaje guardado en BD - ID: ${result.insertId}`);
-            return result.insertId;
-            
-        } catch (error) {
-            console.error('❌ Error guardando mensaje en BD:', error);
-            throw error;
-        }
+        // NO inicializar MySQL - Render no puede conectar a tu MySQL local
     }
 
     start(port) {
@@ -85,41 +53,23 @@ class ChatServer {
                     if (fromUser) {
                         console.log(`📨 Mensaje privado de ${fromUser.username} para usuario ${data.to_user_id}: ${data.message}`);
                         
-                        // 1. GUARDAR EN BASE DE DATOS
-                        let messageId;
-                        try {
-                            messageId = await this.saveMessageToDatabase({
-                                from_user_id: fromUser.user_id,
-                                to_user_id: data.to_user_id,
-                                message: data.message
-                            });
-                        } catch (dbError) {
-                            // Si falla la BD, enviar error al cliente
-                            ws.send(JSON.stringify({
-                                type: 'error',
-                                message: 'Error guardando mensaje en base de datos'
-                            }));
-                            break;
-                        }
-
-                        // 2. ENVIAR MENSAJE AL DESTINATARIO
+                        // SOLO ENVIAR POR WEBSOCKET - NO GUARDAR EN BD
                         const messageData = {
                             type: 'private_message',
                             from_user_id: fromUser.user_id,
                             from_username: fromUser.username,
                             to_user_id: data.to_user_id,
                             message: data.message,
-                            message_id: messageId, // ID del mensaje guardado
                             timestamp: new Date().toISOString()
                         };
                         
                         this.sendPrivateMessage(data.to_user_id, messageData);
                         
-                        // 3. CONFIRMAR AL REMITENTE
+                        // CONFIRMAR AL REMITENTE
                         ws.send(JSON.stringify({
                             type: 'message_sent',
-                            message_id: messageId,
-                            timestamp: messageData.timestamp
+                            timestamp: messageData.timestamp,
+                            debug: 'Mensaje enviado (sin guardar en BD)'
                         }));
                     }
                     break;
@@ -167,7 +117,7 @@ class ChatServer {
         }
         
         if (!sent) {
-            console.log(`⚠️ Usuario ${targetUserId} no está conectado, mensaje guardado en BD`);
+            console.log(`⚠️ Usuario ${targetUserId} no está conectado`);
         }
     }
 
